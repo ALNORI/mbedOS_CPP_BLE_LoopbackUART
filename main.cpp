@@ -21,7 +21,7 @@
 #define BLE_UUID_NUS_TX_CHARACTERISTIC  0x0002 /**< The UUID of the TX Characteristic. */
 #define BLE_UUID_NUS_RX_CHARACTERISTIC  0x0003 /**< The UUID of the RX Characteristic. */
 
-#define NEED_CONSOLE_OUTPUT 0 /* Set this if you need debug messages on the console;
+#define NEED_CONSOLE_OUTPUT 1 /* Set this if you need debug messages on the console;
                                * it will have an impact on code-size and power consumption. */
 
 #if NEED_CONSOLE_OUTPUT
@@ -39,30 +39,34 @@ static const uint8_t uart_base_uuid[] = {0x6e, 0x40, 0x00, 0x01, 0xb5, 0xa3, 0xf
 static const uint8_t uart_tx_uuid[]   = {0x6e, 0x40, 0x00, 0x02, 0xb5, 0xa3, 0xf3, 0x93, 0xe0, 0xa9, 0xe5,0x0e, 0x24, 0xdc, 0xca, 0x9e};
 static const uint8_t uart_rx_uuid[]   = {0x6e, 0x40, 0x00, 0x03, 0xb5, 0xa3, 0xf3, 0x93, 0xe0, 0xa9, 0xe5,0x0e, 0x24, 0xdc, 0xca, 0x9e};
 static const uint8_t uart_base_uuid_rev[] = {0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0, 0x93, 0xf3, 0xa3, 0xb5, 0x01, 0x00, 0x40, 0x6e};
-uint8_t txPayload[8] = {0,};
-uint8_t rxPayload[8] = {0,};
-GattCharacteristic  txCharacteristic (uart_tx_uuid, txPayload, 1, 8,
+
+static const uint8_t SIZEOF_TX_RX_BUFFER = 128;
+uint8_t rxPayload[SIZEOF_TX_RX_BUFFER] = {0,};
+uint8_t txPayload[SIZEOF_TX_RX_BUFFER] = {0,};
+GattCharacteristic  rxCharacteristic (uart_tx_uuid, rxPayload, 1, SIZEOF_TX_RX_BUFFER,
                                       GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE | GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE_WITHOUT_RESPONSE);
-GattCharacteristic  rxCharacteristic (uart_rx_uuid, rxPayload, 1, 8,
-                                      GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY);
-GattCharacteristic *uartChars[] = {&txCharacteristic, &rxCharacteristic};
+GattCharacteristic  txCharacteristic (uart_rx_uuid, txPayload, 1, SIZEOF_TX_RX_BUFFER, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY);
+GattCharacteristic *uartChars[] = {&rxCharacteristic, &txCharacteristic};
 GattService         uartService(uart_base_uuid, uartChars, sizeof(uartChars) / sizeof(GattCharacteristic *));
 
-void disconnectionCallback(void)
+void disconnectionCallback(Gap::Handle_t handle, Gap::DisconnectionReason_t reason)
 {
     DEBUG("Disconnected!\n\r");
     DEBUG("Restarting the advertising process\n\r");
     ble.startAdvertising();
 }
 
-void onDataWritten(uint16_t charHandle)
+void onDataWritten(uint16_t charHandle, const GattCharacteristicWriteCBParams *params)
 {
-    if (charHandle == txCharacteristic.getHandle()) {
-        DEBUG("onDataWritten()\n\r");
-        uint16_t bytesRead;
-        ble.readCharacteristicValue(txCharacteristic.getHandle(), txPayload, &bytesRead);
-        DEBUG("ECHO: %s\n\r", (char *)txPayload);
-        ble.updateCharacteristicValue(rxCharacteristic.getHandle(), txPayload, bytesRead);
+    if (charHandle == rxCharacteristic.getValueAttribute().getHandle()) {
+        uint16_t bytesRead = params->len;
+        DEBUG("received %u bytes\n\r", bytesRead);
+        if (bytesRead < sizeof(rxPayload)) {
+            memcpy(rxPayload, params->data, bytesRead);
+            rxPayload[bytesRead] = 0;
+        }
+        DEBUG("ECHO: %s\n\r", (char *)rxPayload);
+        ble.updateCharacteristicValue(txCharacteristic.getValueAttribute().getHandle(), rxPayload, bytesRead);
     }
 }
 
