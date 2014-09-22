@@ -17,16 +17,13 @@
 #include "mbed.h"
 #include "BLEDevice.h"
 
-#define BLE_UUID_NUS_SERVICE            0x0001 /**< The UUID of the Nordic UART Service. */
-#define BLE_UUID_NUS_TX_CHARACTERISTIC  0x0002 /**< The UUID of the TX Characteristic. */
-#define BLE_UUID_NUS_RX_CHARACTERISTIC  0x0003 /**< The UUID of the RX Characteristic. */
+#include "UARTService.h"
 
-#define NEED_CONSOLE_OUTPUT 1 /* Set this if you need debug messages on the console;
+#define NEED_CONSOLE_OUTPUT 0 /* Set this if you need debug messages on the console;
                                * it will have an impact on code-size and power consumption. */
 
 #if NEED_CONSOLE_OUTPUT
-Serial  pc(USBTX, USBRX);
-#define DEBUG(...) { pc.printf(__VA_ARGS__); }
+#define DEBUG(...) { printf(__VA_ARGS__); }
 #else
 #define DEBUG(...) /* nothing */
 #endif /* #if NEED_CONSOLE_OUTPUT */
@@ -34,20 +31,7 @@ Serial  pc(USBTX, USBRX);
 BLEDevice  ble;
 DigitalOut led1(LED1);
 
-// The Nordic UART Service
-static const uint8_t uart_base_uuid[] = {0x6e, 0x40, 0x00, 0x01, 0xb5, 0xa3, 0xf3, 0x93, 0xe0, 0xa9, 0xe5,0x0e, 0x24, 0xdc, 0xca, 0x9e};
-static const uint8_t uart_tx_uuid[]   = {0x6e, 0x40, 0x00, 0x02, 0xb5, 0xa3, 0xf3, 0x93, 0xe0, 0xa9, 0xe5,0x0e, 0x24, 0xdc, 0xca, 0x9e};
-static const uint8_t uart_rx_uuid[]   = {0x6e, 0x40, 0x00, 0x03, 0xb5, 0xa3, 0xf3, 0x93, 0xe0, 0xa9, 0xe5,0x0e, 0x24, 0xdc, 0xca, 0x9e};
-static const uint8_t uart_base_uuid_rev[] = {0x9e, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0, 0x93, 0xf3, 0xa3, 0xb5, 0x01, 0x00, 0x40, 0x6e};
-
-static const uint8_t SIZEOF_TX_RX_BUFFER = 128;
-uint8_t rxPayload[SIZEOF_TX_RX_BUFFER] = {0,};
-uint8_t txPayload[SIZEOF_TX_RX_BUFFER] = {0,};
-GattCharacteristic  rxCharacteristic (uart_tx_uuid, rxPayload, 1, SIZEOF_TX_RX_BUFFER,
-                                      GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE | GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_WRITE_WITHOUT_RESPONSE);
-GattCharacteristic  txCharacteristic (uart_rx_uuid, txPayload, 1, SIZEOF_TX_RX_BUFFER, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY);
-GattCharacteristic *uartChars[] = {&rxCharacteristic, &txCharacteristic};
-GattService         uartService(uart_base_uuid, uartChars, sizeof(uartChars) / sizeof(GattCharacteristic *));
+UARTService *uartServicePtr;
 
 void disconnectionCallback(Gap::Handle_t handle, Gap::DisconnectionReason_t reason)
 {
@@ -56,23 +40,18 @@ void disconnectionCallback(Gap::Handle_t handle, Gap::DisconnectionReason_t reas
     ble.startAdvertising();
 }
 
-void onDataWritten(uint16_t charHandle, const GattCharacteristicWriteCBParams *params)
+void onDataWritten(const GattCharacteristicWriteCBParams *params)
 {
-    if (charHandle == rxCharacteristic.getValueAttribute().getHandle()) {
+    if ((uartServicePtr != NULL) && (params->charHandle == uartServicePtr->getTXCharacteristicHandle())) {
         uint16_t bytesRead = params->len;
         DEBUG("received %u bytes\n\r", bytesRead);
-        if (bytesRead < sizeof(rxPayload)) {
-            memcpy(rxPayload, params->data, bytesRead);
-            rxPayload[bytesRead] = 0;
-        }
-        DEBUG("ECHO: %s\n\r", (char *)rxPayload);
-        ble.updateCharacteristicValue(txCharacteristic.getValueAttribute().getHandle(), rxPayload, bytesRead);
+        ble.updateCharacteristicValue(uartServicePtr->getRXCharacteristicHandle(), params->data, bytesRead);
     }
 }
 
 void periodicCallback(void)
 {
-    led1 = !led1; /* Do blinky on LED1 while we're waiting for BLE events */
+    led1 = !led1;
 }
 
 int main(void)
@@ -90,14 +69,15 @@ int main(void)
     ble.accumulateAdvertisingPayload(GapAdvertisingData::BREDR_NOT_SUPPORTED);
     ble.setAdvertisingType(GapAdvertisingParams::ADV_CONNECTABLE_UNDIRECTED);
     ble.accumulateAdvertisingPayload(GapAdvertisingData::SHORTENED_LOCAL_NAME,
-                                    (const uint8_t *)"BLE UART", sizeof("BLE UART") - 1);
+                                     (const uint8_t *)"BLE UART", sizeof("BLE UART") - 1);
     ble.accumulateAdvertisingPayload(GapAdvertisingData::COMPLETE_LIST_128BIT_SERVICE_IDS,
-                                    (const uint8_t *)uart_base_uuid_rev, sizeof(uart_base_uuid));
+                                     (const uint8_t *)UARTServiceUUID_reversed, sizeof(UARTServiceUUID_reversed));
 
     ble.setAdvertisingInterval(160); /* 100ms; in multiples of 0.625ms. */
     ble.startAdvertising();
 
-    ble.addService(uartService);
+    UARTService uartService(ble);
+    uartServicePtr = &uartService;
 
     while (true) {
         ble.waitForEvent();
