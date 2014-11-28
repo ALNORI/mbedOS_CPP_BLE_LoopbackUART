@@ -73,7 +73,7 @@ int main(void)
     ble.accumulateAdvertisingPayload(GapAdvertisingData::COMPLETE_LIST_128BIT_SERVICE_IDS,
                                      (const uint8_t *)UARTServiceUUID_reversed, sizeof(UARTServiceUUID_reversed));
 
-    ble.setAdvertisingInterval(160); /* 100ms; in multiples of 0.625ms. */
+    ble.setAdvertisingInterval(Gap::MSEC_TO_ADVERTISEMENT_DURATION_UNITS(1000));
     ble.startAdvertising();
 
     UARTService uartService(ble);
