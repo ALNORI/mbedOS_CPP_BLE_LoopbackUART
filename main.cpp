@@ -15,9 +15,9 @@
  */
 
 #include "mbed.h"
-#include "BLEDevice.h"
+#include "ble/BLE.h"
 
-#include "UARTService.h"
+#include "ble/services/UARTService.h"
 
 #define NEED_CONSOLE_OUTPUT 0 /* Set this if you need debug messages on the console;
                                * it will have an impact on code-size and power consumption. */
@@ -40,9 +40,9 @@ void disconnectionCallback(Gap::Handle_t handle, Gap::DisconnectionReason_t reas
     ble.startAdvertising();
 }
 
-void onDataWritten(const GattCharacteristicWriteCBParams *params)
+void onDataWritten(const GattWriteCallbackParams *params)
 {
-    if ((uartServicePtr != NULL) && (params->charHandle == uartServicePtr->getTXCharacteristicHandle())) {
+    if ((uartServicePtr != NULL) && (params->handle == uartServicePtr->getTXCharacteristicHandle())) {
         uint16_t bytesRead = params->len;
         DEBUG("received %u bytes\n\r", bytesRead);
         ble.updateCharacteristicValue(uartServicePtr->getRXCharacteristicHandle(), params->data, bytesRead);
@@ -73,7 +73,7 @@ int main(void)
     ble.accumulateAdvertisingPayload(GapAdvertisingData::COMPLETE_LIST_128BIT_SERVICE_IDS,
                                      (const uint8_t *)UARTServiceUUID_reversed, sizeof(UARTServiceUUID_reversed));
 
-    ble.setAdvertisingInterval(Gap::MSEC_TO_ADVERTISEMENT_DURATION_UNITS(1000));
+    ble.setAdvertisingInterval(1000); /* 1000ms; in multiples of 0.625ms. */
     ble.startAdvertising();
 
     UARTService uartService(ble);
