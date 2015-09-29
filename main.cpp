@@ -33,7 +33,7 @@ DigitalOut led1(LED1);
 
 UARTService *uartServicePtr;
 
-void disconnectionCallback(Gap::Handle_t handle, Gap::DisconnectionReason_t reason)
+void disconnectionCallback(const Gap::DisconnectionCallbackParams_t *params)
 {
     DEBUG("Disconnected!\n\r");
     DEBUG("Restarting the advertising process\n\r");
